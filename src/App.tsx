@@ -7,10 +7,26 @@ function App() {
   const [cannyThreshold1, setCannyThreshold1] = useState<number>(50)
   const [cannyThreshold2, setCannyThreshold2] = useState<number>(100)
   const [scaleFactor, setScaleFactor] = useState<number>(1.0)
+  const [copyStatus, setCopyStatus] = useState<string>('')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const cvReady = useOcvLoader()
+
+  // Handle file input change for mobile
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const imageUrl = event.target?.result as string
+        setPastedImage(imageUrl)
+        processImageWithOpenCV(imageUrl)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
 
   useEffect(() => {
     // Listen for paste events
@@ -67,7 +83,7 @@ function App() {
     if (pastedImage && cvReady) {
       processImageWithOpenCV(pastedImage)
     }
-  }, [blurKernelSize, cannyThreshold1, cannyThreshold2, scaleFactor, cvReady])
+  }, [blurKernelSize, cannyThreshold1, cannyThreshold2, scaleFactor, cvReady, pastedImage])
 
   const processImageWithOpenCV = (imageUrl: string) => {
     if (!cvReady || !window.cv || !canvasRef.current) {
@@ -89,13 +105,13 @@ function App() {
         // OpenCV processing starts here
         try {
           const src = window.cv.imread(canvas)
-          
+
           // Scale down the image
           const scaledWidth = Math.round(src.cols * scaleFactor)
           const scaledHeight = Math.round(src.rows * scaleFactor)
           const scaled = new window.cv.Mat()
           window.cv.resize(src, scaled, new window.cv.Size(scaledWidth, scaledHeight), 0, 0, window.cv.INTER_LINEAR)
-          
+
           window.cv.cvtColor(scaled, scaled, window.cv.COLOR_RGBA2GRAY, 0)
 
           // Apply Gaussian blur with dynamic kernel size (must be odd)
@@ -129,6 +145,27 @@ function App() {
     img.src = imageUrl
   }
 
+  const handleCopyImage = async () => {
+    if (!canvasRef.current) return
+
+    try {
+      const canvas = canvasRef.current
+      canvas.toBlob(async (blob) => {
+        if (blob) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ])
+          setCopyStatus('✅ Copied!')
+          setTimeout(() => setCopyStatus(''), 2000)
+        }
+      })
+    } catch (err) {
+      console.error('Failed to copy image:', err)
+      setCopyStatus('❌ Failed to copy')
+      setTimeout(() => setCopyStatus(''), 2000)
+    }
+  }
+
   return (
     <>
       <div className="card">
@@ -141,81 +178,99 @@ function App() {
             padding: '20px',
             border: '2px dashed #646cff',
             borderRadius: '8px',
-            cursor: 'text',
+            cursor: 'pointer',
+            textAlign: 'center',
+            minHeight: '80px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
           }}
           tabIndex={0}
+          onClick={() => fileInputRef.current?.click()}
         >
-          <p>📋 Click here and paste an image (Ctrl+V / Cmd+V)</p>
+          <p style={{ margin: 0 }}>📋 Click to select an image</p>
+          <p style={{ margin: 0, fontSize: '0.9em', opacity: 0.7 }}>
+            or paste (Ctrl+V / Cmd+V) on desktop
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileInput}
+            style={{ display: 'none' }}
+          />
         </div>
 
         <div style={{ margin: '20px 0' }}>
-          <div style={{ marginBottom: '3px' }}>
-            <label>
-              Scale Factor: {scaleFactor.toFixed(2)}x
-              <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.05"
-                value={scaleFactor}
-                onChange={(e) => setScaleFactor(Number(e.target.value))}
-                disabled={!pastedImage || !cvReady}
-                style={{ width: '100%', marginTop: '5px' }}
-              />
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '8px' }}>
+              <strong>Scale Factor:</strong> {scaleFactor.toFixed(2)}x
             </label>
+            <input
+              type="range"
+              min="0.1"
+              max="1.0"
+              step="0.05"
+              value={scaleFactor}
+              onChange={(e) => setScaleFactor(Number(e.target.value))}
+              disabled={!pastedImage || !cvReady}
+              style={{ width: '100%', height: '40px', cursor: 'pointer' }}
+            />
           </div>
 
-          <div style={{ marginBottom: '3px' }}>
-            <label>
-              Gaussian Blur Kernel Size: {blurKernelSize}
-              <input
-                type="range"
-                min="1"
-                max="21"
-                step="2"
-                value={blurKernelSize}
-                onChange={(e) => setBlurKernelSize(Number(e.target.value))}
-                disabled={!pastedImage || !cvReady}
-                style={{ width: '100%', marginTop: '5px' }}
-              />
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '8px' }}>
+              <strong>Gaussian Blur Kernel Size:</strong> {blurKernelSize}
             </label>
+            <input
+              type="range"
+              min="1"
+              max="21"
+              step="2"
+              value={blurKernelSize}
+              onChange={(e) => setBlurKernelSize(Number(e.target.value))}
+              disabled={!pastedImage || !cvReady}
+              style={{ width: '100%', height: '40px', cursor: 'pointer' }}
+            />
           </div>
 
-          <div style={{ marginBottom: '3px' }}>
-            <label>
-              Canny Threshold 1: {cannyThreshold1}
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={cannyThreshold1}
-                onChange={(e) => setCannyThreshold1(Number(e.target.value))}
-                disabled={!pastedImage || !cvReady}
-                style={{ width: '100%', marginTop: '5px' }}
-              />
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '8px' }}>
+              <strong>Canny Threshold 1:</strong> {cannyThreshold1}
             </label>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={cannyThreshold1}
+              onChange={(e) => setCannyThreshold1(Number(e.target.value))}
+              disabled={!pastedImage || !cvReady}
+              style={{ width: '100%', height: '40px', cursor: 'pointer' }}
+            />
           </div>
 
-          <div style={{ marginBottom: '3px' }}>
-            <label>
-              Canny Threshold 2: {cannyThreshold2}
-              <input
-                type="range"
-                min="0"
-                max="300"
-                value={cannyThreshold2}
-                onChange={(e) => setCannyThreshold2(Number(e.target.value))}
-                disabled={!pastedImage || !cvReady}
-                style={{ width: '100%', marginTop: '5px' }}
-              />
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '8px' }}>
+              <strong>Canny Threshold 2:</strong> {cannyThreshold2}
             </label>
+            <input
+              type="range"
+              min="0"
+              max="300"
+              value={cannyThreshold2}
+              onChange={(e) => setCannyThreshold2(Number(e.target.value))}
+              disabled={!pastedImage || !cvReady}
+              style={{ width: '100%', height: '40px', cursor: 'pointer' }}
+            />
           </div>
         </div>
 
         <button
           onClick={() => pastedImage && processImageWithOpenCV(pastedImage)}
           disabled={!pastedImage || !cvReady}
-          style={{ marginBottom: '10px' }}
+          style={{ marginBottom: '10px', padding: '12px 24px', fontSize: '16px', minHeight: '44px' }}
         >
           🔄 Reprocess Image
         </button>
@@ -225,11 +280,21 @@ function App() {
           ref={canvasRef}
           style={{
             maxWidth: '100%',
+            height: 'auto',
             border: '1px solid #ccc',
             borderRadius: '4px',
+            touchAction: 'pan-y pinch-zoom',
           }}
         />
       </div>
+
+      <button
+        onClick={handleCopyImage}
+        disabled={!pastedImage || !cvReady}
+        style={{ marginBottom: '10px', padding: '12px 24px', fontSize: '16px', minHeight: '44px', marginLeft: '10px' }}
+      >
+        📋 Copy Image {copyStatus}
+      </button>
     </>
   )
 }
